@@ -101,10 +101,74 @@ class ClientHandler(threading.Thread):
             self.handle_game_data(payload)
         elif opcode == protocol.REQ_LIST_ROOMS:
             self.handle_list_rooms()
+        elif opcode == protocol.REQ_P2P_INIT:
+            self.handle_p2p_init(payload)
+        elif opcode == protocol.RESP_P2P_READY:
+            self.handle_p2p_ready(payload)
         elif opcode == protocol.PONG:
             pass # Handled in loop/heartbeat logic
         else:
             logger.warning(f"Unknown opcode {opcode} from {self.pseudo or self.addr}")
+
+    def handle_p2p_init(self, payload):
+        # Client A wants to chat with B
+        try:
+            target_pseudo = payload.decode('utf-8')
+        except:
+            return
+
+        target = None
+        for c in self.server.clients:
+            if c.pseudo == target_pseudo:
+                target = c
+                break
+        
+        if not target:
+            self.send_message(protocol.ERROR, b"User not found")
+            return
+
+        if target == self:
+            self.send_message(protocol.ERROR, b"Cannot P2P yourself")
+            return
+            
+        # Send REQ_P2P_START to Target
+        # Payload: [RequesterPseudo]
+        logger.info(f"P2P Init: {self.pseudo} -> {target_pseudo}")
+        target.send_message(protocol.REQ_P2P_START, self.pseudo.encode('utf-8'))
+
+    def handle_p2p_ready(self, payload):
+        # Client B is ready and listening. Payload: [RequesterPseudoLen][RequesterPseudo][Port]
+        # We need to forward IP:Port to Requester.
+        try:
+            req_len = payload[0]
+            req_pseudo = payload[1:1+req_len].decode('utf-8')
+            port_bytes = payload[1+req_len:1+req_len+4]
+            port = int.from_bytes(port_bytes, 'big')
+        except Exception as e:
+            logger.error(f"P2P Ready Parse Error: {e}")
+            return
+
+        requester = None
+        for c in self.server.clients:
+            if c.pseudo == req_pseudo:
+                requester = c
+                break
+        
+        if not requester:
+            return # Requester gone?
+
+        # Send RESP_P2P_CONNECT to Requester
+        # Payload: [IPLen][IP][Port]
+        # self.addr is (IP, Port), we need IP.
+        target_ip = self.addr[0]
+        # Loopback issue: if target_ip is 127.0.0.1 and we are on same machine it works.
+        # If real network, it should be the public IP seen by server.
+        
+        ip_bytes = target_ip.encode('utf-8')
+        resp_payload = struct.pack('B', len(ip_bytes)) + ip_bytes + struct.pack('!I', port)
+        
+        logger.info(f"P2P Connect: {requester.pseudo} connecting to {self.pseudo} at {target_ip}:{port}")
+        requester.send_message(protocol.RESP_P2P_CONNECT, resp_payload)
 
     def handle_login(self, payload):
         try:

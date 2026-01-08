@@ -11,11 +11,17 @@ ROOM_LIST = 0x05
 REQ_LEAVE = 0x06
 NOTIFY = 0x07
 DATA = 0x08
+REQ_LIST_ROOMS = 0x09
+
+# P2P OpCodes
+REQ_P2P_INIT = 0x0A       # Client A -> Server: I want to chat with B
+REQ_P2P_START = 0x0B      # Server -> Client B: Open a port for A
+RESP_P2P_READY = 0x0C     # Client B -> Server: I'm listening on Port X
+RESP_P2P_CONNECT = 0x0D   # Server -> Client A: Connect to B on IP:Port
+
 PING = 0xFD
 PONG = 0xFE
 ERROR = 0xFF
-
-REQ_LIST_ROOMS = 0x09
 
 # Error Codes
 ERR_FULL = 0x01

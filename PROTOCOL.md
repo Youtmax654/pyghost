@@ -171,6 +171,38 @@ sequenceDiagram
     end
 ```
 
+### Négociation P2P (Messagerie Privée)
+
+**C -> S : REQ_P2P_INIT (0x0A)**
+- Format : `[Size][0x0A][TargetPseudo (UTF-8)]`
+- Description : Client A demande à parler à Client B.
+
+**S -> C : REQ_P2P_START (0x0B)**
+- Format : `[Size][0x0B][RequesterPseudo (UTF-8)]`
+- Description : Serveur demande à Client B d'ouvrir un port pour Client A.
+
+**C -> S : RESP_P2P_READY (0x0C)**
+- Format : `[Size][0x0C][LenRequester(1)][RequesterPseudo][Port(4)]`
+- Description : Client B confirme au serveur qu'il écoute sur le port X pour Client A.
+
+**S -> C : RESP_P2P_CONNECT (0x0D)**
+- Format : `[Size][0x0D][LenIP(1)][IP][Port(4)]`
+- Description : Serveur donne à Client A l'IP:Port de Client B pour se connecter.
+
+```mermaid
+sequenceDiagram
+    participant A as Client A
+    participant S as Serveur
+    participant B as Client B
+
+    A->>S: REQ_P2P_INIT ("Bob")
+    S->>B: REQ_P2P_START ("Alice")
+    B->>B: Ouvre Socket (Port P)
+    B-->>S: RESP_P2P_READY ("Alice", Port P)
+    S-->>A: RESP_P2P_CONNECT (IP_B, Port P)
+    A->>B: Connexion Directe TCP
+```
+
 ---
 
 ## Protocole de Jeu (Couche Application)

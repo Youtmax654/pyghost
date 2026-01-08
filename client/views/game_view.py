@@ -3,6 +3,7 @@ from client.controllers.network_manager import NetworkManager
 import time
 import queue
 import asyncio
+import threading
 
 class GameClientApp:
     def __init__(self, page: ft.Page):
@@ -46,6 +47,7 @@ class GameClientApp:
         self.page.dialog = self.broadcast_dialog
         
         self.setup_callbacks()
+        self.setup_p2p_callbacks()
         self.show_login()
 
     def setup_callbacks(self):
@@ -97,11 +99,22 @@ class GameClientApp:
             self.handle_notify(ntype, pseudo)
         elif evt_type == "DISCONNECT":
             self.show_error("Disconnected")
+        elif evt_type == "P2P_REQ":
+            self.handle_p2p_request(data)
+        elif evt_type == "P2P_START":
+            sock, peer = data
+            self.handle_p2p_start(sock, peer)
             
         self.page.update()
 
     def show_error(self, msg):
         snack = ft.SnackBar(ft.Text(f"Error: {msg}", color=ft.Colors.WHITE), bgcolor=ft.Colors.RED)
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
+
+    def show_info(self, msg):
+        snack = ft.SnackBar(ft.Text(str(msg), color=ft.Colors.WHITE), bgcolor=ft.Colors.BLUE)
         self.page.overlay.append(snack)
         snack.open = True
         self.page.update()
@@ -200,7 +213,13 @@ class GameClientApp:
             self.game_container,
             ft.Divider(),
             ft.Container(self.chat_list, height=200, border=ft.border.all(1, ft.Colors.GREY_800)),
-            ft.Row([self.chat_input, ft.IconButton(ft.Icons.SEND, on_click=self.do_send_chat)])
+            ft.Row([self.chat_input, ft.IconButton(ft.Icons.SEND, on_click=self.do_send_chat)]),
+            ft.Divider(),
+            ft.Row([
+                ft.Text("Private Chat:", size=12),
+                ft.TextField(label="Other Pseudo", width=150, on_submit=lambda e: self.do_p2p_request(e.control.value)),
+                ft.IconButton(ft.Icons.CONNECT_WITHOUT_CONTACT, on_click=lambda e: self.do_p2p_request(e.control.parent.controls[1].value))
+            ])
         ]
         self.main_container.update()
 
@@ -224,6 +243,11 @@ class GameClientApp:
             self.network.send_game_data({"type": "CHAT", "sender": self.current_pseudo, "message": msg})
             self.chat_input.value = ""
             self.chat_input.update()
+
+    def do_p2p_request(self, target_pseudo):
+        if target_pseudo and target_pseudo != self.current_pseudo:
+            self.network.request_p2p(target_pseudo)
+            self.show_info(f"Request sent to {target_pseudo}")
 
     def handle_game_data(self, data):
         dtype = data.get("type")
@@ -281,3 +305,107 @@ class GameClientApp:
     def close_broadcast_dialog(self, e):
         self.broadcast_dialog.open = False
         self.page.update()
+
+    # --- P2P UI ---
+
+    def setup_p2p_callbacks(self):
+        # Called in init
+        self.network.on_p2p_incoming_request = lambda req: self.event_queue.put(("P2P_REQ", req))
+        self.network.on_p2p_socket_ready = lambda s, p: self.event_queue.put(("P2P_START", (s, p)))
+
+    def handle_p2p_request(self, requester):
+        # Dialog to accept/refuse
+        self.incoming_p2p_requester = requester
+        
+        def on_accept(e):
+            self.network.accept_p2p_request(self.incoming_p2p_requester)
+            self.p2p_confirm_dialog.open = False
+            self.page.update()
+            
+        def on_refuse(e):
+            self.p2p_confirm_dialog.open = False
+            self.page.update()
+            
+        self.p2p_confirm_dialog = ft.AlertDialog(
+            title=ft.Text("Private Chat Request"),
+            content=ft.Text(f"{requester} wants to start a private chat with you."),
+            actions=[
+                ft.TextButton("Accept", on_click=on_accept),
+                ft.TextButton("Deny", on_click=on_refuse)
+            ]
+        )
+        self.page.overlay.append(self.p2p_confirm_dialog)
+        self.p2p_confirm_dialog.open = True
+        self.page.update()
+
+    def handle_p2p_start(self, sock, peer):
+        # Start the chat window
+        print(f"Starting P2P with {peer}")
+        chat_window = P2PChatWindow(sock, peer, self.current_pseudo)
+        self.page.overlay.append(chat_window.build())
+        chat_window.open()
+        self.page.update()
+        
+        # Start reading from socket in background (managed by P2PChatWindow)
+        threading.Thread(target=chat_window.read_loop, daemon=True).start()
+
+class P2PChatWindow:
+    def __init__(self, sock, peer_name, my_name):
+        self.sock = sock
+        self.peer = peer_name
+        self.me = my_name
+        self.dialog = None
+        self.chat_list = ft.ListView(expand=True, spacing=5, auto_scroll=True, height=300)
+        self.input = ft.TextField(hint_text="Private message...", expand=True, on_submit=self.send_msg)
+
+    def build(self):
+        self.dialog = ft.AlertDialog(
+            title=ft.Text(f"Private Chat with {self.peer}"),
+            content=ft.Column([
+                ft.Container(self.chat_list, border=ft.border.all(1, ft.Colors.GREY), height=300),
+                ft.Row([self.input, ft.IconButton(ft.Icons.SEND, on_click=self.send_msg)])
+            ], width=400, height=400),
+            actions=[ft.TextButton("Close", on_click=self.close)]
+        )
+        return self.dialog
+
+    def open(self):
+        self.dialog.open = True
+
+    def close(self, e):
+        self.dialog.open = False
+        try:
+            self.sock.close()
+        except: pass
+        self.dialog.update()
+
+    def send_msg(self, e):
+        msg = self.input.value
+        if msg:
+            try:
+                # Simple line protocol for P2P
+                data = msg.encode('utf-8')
+                self.sock.sendall(data)
+                self.add_log(f"{self.me}: {msg}", color="blue")
+                self.input.value = ""
+                self.input.update()
+            except Exception as ex:
+                self.add_log(f"Error: {ex}", color="red")
+
+    def read_loop(self):
+        print("P2P Read Loop Started")
+        while True:
+            try:
+                data = self.sock.recv(1024)
+                if not data: break
+                msg = data.decode('utf-8')
+                print(f"P2P Recv: {msg}")
+                self.add_log(f"{self.peer}: {msg}", color="green")
+            except Exception as e:
+                print(f"P2P Read Error: {e}")
+                break
+        self.add_log("Connection closed.", color="red")
+
+    def add_log(self, text, color="white"):
+        self.chat_list.controls.append(ft.Text(text, color=color))
+        self.dialog.update()
