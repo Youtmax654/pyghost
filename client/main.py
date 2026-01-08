@@ -7,8 +7,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from client.views.game_view import GameClientApp
 
-def main(page: ft.Page):
+async def main(page: ft.Page):
     app = GameClientApp(page)
+    await app.run_async_loop()
 
 if __name__ == "__main__":
     ft.run(main)

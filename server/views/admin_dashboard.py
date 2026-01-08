@@ -1,5 +1,5 @@
 import flet as ft
-import threading
+import asyncio
 import time
 
 class AdminDashboard:
@@ -7,7 +7,7 @@ class AdminDashboard:
         self.server = server_app
         self.page = None
 
-    def main(self, page: ft.Page):
+    async def main(self, page: ft.Page):
         self.page = page
         page.title = "Ghost Server Admin"
         page.theme_mode = ft.ThemeMode.DARK
@@ -41,19 +41,17 @@ class AdminDashboard:
             self.client_list
         )
         
-        # Periodic update loop
-        def update_loop():
-            while True:
-                try:
-                    self.refresh_data()
-                    time.sleep(1)
-                except Exception as e:
-                    print(e)
-                    break
-        
-        # Start update thread
-        t = threading.Thread(target=update_loop, daemon=True)
-        t.start()
+        # Async Loop directly awaited
+        await self.update_loop()
+
+    async def update_loop(self):
+        while True:
+            try:
+                self.refresh_data()
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"Admin Loop Error: {e}")
+                await asyncio.sleep(1)
 
     def refresh_data(self):
         if not self.page: return
