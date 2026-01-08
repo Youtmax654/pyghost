@@ -41,6 +41,8 @@ class GameClientApp:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
+
+        
         self.page.dialog = self.broadcast_dialog
         
         self.setup_callbacks()
@@ -249,7 +251,8 @@ class GameClientApp:
             
         elif dtype == "BROADCAST":
             msg = data.get("message", "")
-            self.show_broadcast_modal(msg)
+            full_msg = f"Admin a envoyé un message : {msg}"
+            self.show_broadcast_modal(full_msg)
 
     def handle_notify(self, ntype, pseudo):
         # 0=JOIN, 1=LEAVE
@@ -271,6 +274,7 @@ class GameClientApp:
 
     def show_broadcast_modal(self, msg):
         self.broadcast_content.value = msg
+        self.page.overlay.append(self.broadcast_dialog)
         self.broadcast_dialog.open = True
         self.page.update()
 

@@ -96,7 +96,8 @@ class GhostServer:
             "sender": "ADMIN",
             "message": text
         }
-        msg = protocol.pack_message(protocol.DATA, payload)
+        json_bytes = json.dumps(payload).encode('utf-8')
+        msg = protocol.pack_message(protocol.DATA, json_bytes)
         for c in self.clients:
             try:
                 c.send_raw(msg)

@@ -260,6 +260,7 @@ class ClientHandler(threading.Thread):
 
     def _broadcast_room_json(self, data_dict):
         if self.current_room:
+            logger.info(f"DEBUG_SERVER: Broadcasting: {data_dict} to {self.current_room.name}")
             payload = json.dumps(data_dict).encode('utf-8')
             msg = protocol.pack_message(protocol.DATA, payload)
             self.current_room.broadcast(msg)

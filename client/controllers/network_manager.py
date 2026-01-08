@@ -132,6 +132,7 @@ class NetworkManager(threading.Thread):
         elif opcode == protocol.DATA:
             try:
                 data = json.loads(payload.decode('utf-8'))
+                print(f"DEBUG_CLIENT: Received DATA payload: {data}")
                 if self.on_game_data: self.on_game_data(data)
             except Exception as e:
                 print(f"DEBUG: Data handling error: {e}")
