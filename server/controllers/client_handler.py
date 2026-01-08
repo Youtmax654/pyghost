@@ -239,43 +239,21 @@ class ClientHandler(threading.Thread):
                      game.remove_player(self.pseudo)
                      # Handle elimination logic
             
+            elif res == "LOSE_INVALID":
+                # Current player loses because fragment is invalid
+                punish = game.punish_player(self.pseudo)
+                state["scores"] = game.scores
+                state["frag"] = game.frag
+                state["event"] = f"{self.pseudo} played an invalid letter (impossible word)!"
+                if punish == "ELIMINATED":
+                    game.remove_player(self.pseudo)
+            
             if res == "CONTINUE":
                 game.next_turn()
             
             state["active_player"] = game.get_current_player()
             self._broadcast_room_json(state)
 
-        elif msg_type == "CHALLENGE":
-             # Check turn? Usually you challenge OUT of turn immediately after play?
-             # Or only active player can challenge previous?
-             # Rule 3: "Un joueur peut Challenger le précédent..."
-             # Usually in Ghost, you challenge when it's your turn, instead of playing a letter.
-             if game.get_current_player() != self.pseudo:
-                 self.send_message(protocol.ERROR, b"Not your turn to challenge")
-                 return
-             
-             previous = game.players[(game.players.index(self.pseudo) - 1) % len(game.players)]
-             res = game.challenge()
-             
-             if res == "PREVIOUS_LOSES":
-                 game.punish_player(previous)
-                 msg = f"Challenge successful! {previous} loses."
-             else:
-                 game.punish_player(self.pseudo)
-                 msg = f"Challenge failed! {self.pseudo} loses."
-            
-             # Reset round logic implicitly handled by punish_player resetting frag?
-             # Punish player resets frag.
-             
-             state = {
-                "type": "GAME_STATE",
-                "frag": game.frag,
-                "scores": game.scores,
-                "active_player": game.get_current_player(),
-                "event": msg
-             }
-             self._broadcast_room_json(state)
-             
         elif msg_type == "CHAT":
             # Just relay
              self._broadcast_room_json(data) # Assume data has sender/msg

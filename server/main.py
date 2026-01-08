@@ -41,7 +41,7 @@ class GhostServer:
         
         # Start Admin Dashboard (Main Thread)
         dashboard = AdminDashboard(self)
-        ft.app(target=dashboard.main)
+        ft.run(dashboard.main)
 
     def _accept_loop(self):
         while self.running:

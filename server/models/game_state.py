@@ -1,3 +1,5 @@
+import os
+
 class GameState:
     def __init__(self):
         self.frag = ""
@@ -7,9 +9,21 @@ class GameState:
         self.dictionary = self.load_dictionary()
 
     def load_dictionary(self):
-        # Pour l'exercice, on utilise un petit dictionnaire en dur.
-        # Dans un vrai projet, on chargerait un fichier.
-        return {
+        try:
+            # Construct absolute path to common/words.txt
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            words_path = os.path.join(current_dir, "..", "..", "common", "words.txt")
+            
+            with open(words_path, "r", encoding="utf-8") as f:
+                # Read all lines, strip whitespace, and convert to uppercase
+                words = {line.strip().upper() for line in f if line.strip()}
+            
+            print(f"Dictionary loaded: {len(words)} words.")
+            return words
+        except Exception as e:
+            print(f"Error loading dictionary: {e}")
+            # Fallback to a small set if file fails
+            return {
             "BONJOUR", "MONDE", "PYTHON", "RESEAU", "SOCKET", "GHOST", "TEST",
             "MANGER", "TABLE", "CHAISE", "MAISON", "APPLE", "BANANA", "ORANGE"
         }
@@ -42,28 +56,18 @@ class GameState:
 
     def play_letter(self, letter):
         self.frag += letter.upper()
-        # Verify if strict word (loss condition logic handled by Controller usually,
-        # but Model can return status).
-        # Rule 2: If completes a valid word > 3 letters, they lose.
+        
+        # Rule 1: If completes a valid word > 3 letters -> LOSE
         if len(self.frag) > 3 and self.frag in self.dictionary:
             return "LOSE_WORD"
+            
+        # Rule 2: If the fragment is NOT a valid prefix (no word starts with it) -> LOSE
+        # (This replaces the manual challenge)
+        is_valid_prefix = any(w.startswith(self.frag) for w in self.dictionary)
+        if not is_valid_prefix:
+            return "LOSE_INVALID"
+            
         return "CONTINUE"
-
-    def challenge(self):
-        # Rule 3: Challenge previous player.
-        # If no word can start with current frag, previous player loses.
-        # Else, challenger loses.
-        # We need to check if ANY word starts with self.frag
-        # BUT the rule says "Un joueur peut Challenger le précédent s'il pense qu'aucun mot ne peut commencer..."
-        # So check: exists w in dict such that w.startswith(frag).
-        
-        valid_exists = any(w.startswith(self.frag) for w in self.dictionary)
-        if not valid_exists:
-            # The fragment is invalid -> Previous player (who wrote the last letter) was bluffing or stuck -> Previous player loses.
-            return "PREVIOUS_LOSES"
-        else:
-            # Fragment is valid (exists a word) -> Challenger was wrong -> Challenger loses.
-            return "CHALLENGER_LOSES"
 
     def punish_player(self, pseudo):
         # Add a letter G-H-O-S-T

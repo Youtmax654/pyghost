@@ -177,8 +177,6 @@ class GameClientApp:
         # Controls
         self.input_letter = ft.TextField(label="Letter", width=100, max_length=1)
         self.btn_play = ft.ElevatedButton("Play", on_click=self.do_play_letter)
-        self.btn_challenge = ft.ElevatedButton("Challenge!", on_click=self.do_challenge, bgcolor=ft.Colors.RED_900)
-        
         self.game_container = ft.Column([
             ft.Container(height=20),
             ft.Text("Current Fragment:", size=12),
@@ -188,7 +186,6 @@ class GameClientApp:
             ft.Container(height=30),
             ft.Row([self.input_letter, self.btn_play], alignment=ft.MainAxisAlignment.CENTER),
             ft.Container(height=10),
-            self.btn_challenge
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
         # Chat / Log
@@ -217,8 +214,7 @@ class GameClientApp:
             self.input_letter.value = ""
             self.input_letter.update()
 
-    def do_challenge(self, e):
-        self.network.send_game_data({"type": "CHALLENGE"})
+    # Challenge Removed
 
     def do_send_chat(self, e):
         msg = self.chat_input.value
