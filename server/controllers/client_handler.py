@@ -225,6 +225,22 @@ class ClientHandler(threading.Thread):
                     resp_payload += bytes([len(p_bytes)]) + p_bytes
 
                 self.send_message(protocol.RESP_ROOM, resp_payload)
+
+                # Broadcast initial game state so everyone sees "Waiting..." or current state
+                game = room.game_state
+                
+                # Story #04: Only start/allow playing if 2+ players
+                active = "Waiting..."
+                if len(room.clients) >= 2:
+                    active = game.get_current_player()
+                
+                state = {
+                    "type": "GAME_STATE",
+                    "frag": game.frag,
+                    "scores": game.scores,
+                    "active_player": active
+                }
+                self._broadcast_room_json(state)
             else:
                 self.send_message(protocol.ERROR, b"Room full")
         else:
@@ -236,6 +252,28 @@ class ClientHandler(threading.Thread):
             notif = b'\x01' + self.pseudo.encode('utf-8') # 1=LEAVE
             self.current_room.broadcast(protocol.pack_message(protocol.NOTIFY, notif), exclude=self)
             self.current_room.remove_client(self)
+            
+            # Broadcast update if room still active
+            if self.current_room and len(self.current_room.clients) > 0:
+                game = self.current_room.game_state
+                
+                # Check if we should revert to waiting
+                active = "Waiting..."
+                if len(self.current_room.clients) >= 2:
+                     active = game.get_current_player()
+
+                state = {
+                    "type": "GAME_STATE",
+                    "frag": game.frag,
+                    "scores": game.scores,
+                    "active_player": active
+                }
+                # We need to broadcast from an existing client handler context or use room broadcast
+                # Since 'self' is leaving, we can use room.broadcast with JSON payload
+                payload = json.dumps(state).encode('utf-8')
+                msg = protocol.pack_message(protocol.DATA, payload)
+                self.current_room.broadcast(msg)
+
             self.current_room = None
 
     def handle_list_rooms(self):
@@ -294,27 +332,59 @@ class ClientHandler(threading.Thread):
             }
             
             if res == "LOSE_WORD":
-                # Current player loses
+                # Current player loses because they completed a word
                 punish = game.punish_player(self.pseudo)
-                state["scores"] = game.scores # Update scores
-                state["frag"] = game.frag 
+                
+                # WORD COMPLETED -> RESET
+                game.frag = ""
+
                 state["event"] = f"{self.pseudo} completed a valid word!"
                 if punish == "ELIMINATED":
-                     game.remove_player(self.pseudo)
-                     # Handle elimination logic
-            
+                     # game.remove_player(self.pseudo) <-- Don't just remove, end game for all
+                     game_over_msg = {
+                         "type": "GAME_OVER",
+                         "reason": f"{self.pseudo} reached GHOST first!"
+                     }
+                     # Update scores one last time before ending
+                     state["scores"] = game.scores
+                     self._broadcast_room_json(state)
+                     self._broadcast_room_json(game_over_msg)
+                     
+                     # Server-side cleanup should arguably happen when they leave
+                     # But we can also force clear the game state if needed
+                     # For now, rely on clients leaving.
+                     return
+                
+                game.next_turn()
+
             elif res == "LOSE_INVALID":
                 # Current player loses because fragment is invalid
                 punish = game.punish_player(self.pseudo)
-                state["scores"] = game.scores
-                state["frag"] = game.frag
+                
+                # INVALID LETTER -> REVERT ONLY LAST CHAR (Continue word)
+                if len(game.frag) > 0:
+                    game.frag = game.frag[:-1]
+                
                 state["event"] = f"{self.pseudo} played an invalid letter (impossible word)!"
                 if punish == "ELIMINATED":
-                    game.remove_player(self.pseudo)
-            
-            if res == "CONTINUE":
+                    # game.remove_player(self.pseudo)
+                    game_over_msg = {
+                         "type": "GAME_OVER",
+                         "reason": f"{self.pseudo} reached GHOST first!"
+                    }
+                    state["scores"] = game.scores
+                    self._broadcast_room_json(state)
+                    self._broadcast_room_json(game_over_msg)
+                    return         
+                
                 game.next_turn()
             
+            elif res == "CONTINUE":
+                game.next_turn()
+            
+            # Update state with final corrections
+            state["scores"] = game.scores
+            state["frag"] = game.frag
             state["active_player"] = game.get_current_player()
             self._broadcast_room_json(state)
 

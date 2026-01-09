@@ -1,3 +1,4 @@
+import socket
 import flet as ft
 import asyncio
 import time
@@ -8,11 +9,24 @@ class AdminDashboard:
         self.page = None
         self.client_to_kick = None
 
+    def get_local_ip(self):
+        try:
+            # Connect to an external server to get the interface IP (doesn't actually send data)
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
+
     def main_setup(self, page: ft.Page):
         # Separated setup logic to avoid re-adding widgets if main is called multiple times (though likely once)
         self.page = page
         page.title = "Ghost Server Admin"
         page.theme_mode = ft.ThemeMode.DARK
+        
+        local_ip = self.get_local_ip()
         
         self.client_list = ft.DataTable(
             columns=[
@@ -48,7 +62,19 @@ class AdminDashboard:
                 page.update()
 
         page.add(
-            ft.Text("Server Status", size=30, weight="bold"),
+            ft.Text("Ghost Server Status", size=30, weight="bold"),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(f"Server IP: {local_ip}", size=20, color=ft.Colors.GREEN),
+                    ft.Text(f"Port: 5000", size=20, color=ft.Colors.GREEN),
+                    ft.Text("Share this IP with clients so they can connect.", size=12, color=ft.Colors.GREY),
+                ]),
+                padding=10,
+                border=ft.border.all(1, ft.Colors.GREEN_900),
+                border_radius=5,
+                bgcolor=ft.Colors.BLACK54
+            ),
+            ft.Divider(),
             ft.Row([self.broadcast_input, ft.ElevatedButton("Send", on_click=send_broadcast)]),
             ft.Divider(),
             ft.Text("Connected Clients"),

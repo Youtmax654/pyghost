@@ -1,5 +1,7 @@
 import os
 
+import unicodedata
+
 class GameState:
     def __init__(self):
         self.frag = ""
@@ -8,6 +10,10 @@ class GameState:
         self.current_player_idx = 0
         self.dictionary = self.load_dictionary()
 
+    def remove_accents(self, input_str):
+        nfkd_form = unicodedata.normalize('NFKD', input_str)
+        return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
     def load_dictionary(self):
         try:
             # Construct absolute path to common/words.txt
@@ -15,8 +21,12 @@ class GameState:
             words_path = os.path.join(current_dir, "..", "..", "common", "words.txt")
             
             with open(words_path, "r", encoding="utf-8") as f:
-                # Read all lines, strip whitespace, and convert to uppercase
-                words = {line.strip().upper() for line in f if line.strip()}
+                # Read all lines, strip whitespace, remove accents and convert to uppercase
+                words = set()
+                for line in f:
+                    if line.strip():
+                        normalized = self.remove_accents(line.strip()).upper()
+                        words.add(normalized)
             
             print(f"Dictionary loaded: {len(words)} words.")
             return words
@@ -80,7 +90,8 @@ class GameState:
             self.scores[pseudo] += ghost[len(current)]
         
         # Reset fragment
-        self.frag = ""
+        # USER REQUEST: Do not reset fragment on mistake
+        # self.frag = ""
         
         if len(self.scores[pseudo]) >= 5:
             return "ELIMINATED"

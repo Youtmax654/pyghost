@@ -48,7 +48,7 @@ class GameClientApp:
         
         self.setup_callbacks()
         self.setup_p2p_callbacks()
-        self.show_login()
+        self.show_connection_screen()
 
     def setup_callbacks(self):
         # We redirect all network callbacks to the queue
@@ -61,7 +61,7 @@ class GameClientApp:
         self.network.on_notify = lambda t, p: self.event_queue.put(("NOTIFY", (t, p)))
         self.network.on_disconnect = lambda: self.event_queue.put(("DISCONNECT", None))
         
-        self.network.connect()
+        # Don't connect yet
 
     async def run_async_loop(self):
         while True:
@@ -121,14 +121,18 @@ class GameClientApp:
 
     # --- VIEWS ---
 
-    def show_login(self):
-        self.pseudo_input = ft.TextField(label="Choisir un pseudo", autofocus=True)
-        join_btn = ft.ElevatedButton("Entrer dans le jeu", on_click=self.do_login, width=200)
+    def show_connection_screen(self):
+        self.ip_input = ft.TextField(label="Server IP", value="127.0.0.1", width=200)
+        self.port_input = ft.TextField(label="Port", value="5000", width=100)
+        self.pseudo_input = ft.TextField(label="Pseudo", autofocus=True, width=200)
+        
+        join_btn = ft.ElevatedButton("Connect & Play", on_click=self.do_connect_and_login, width=200)
         
         content = ft.Column([
             ft.Text("GHOST GAME", size=40, weight="bold", color=ft.Colors.BLUE_200),
             ft.Text("Multiplayer Word Game", size=16, color=ft.Colors.GREY_400),
             ft.Container(height=50),
+            ft.Row([self.ip_input, self.port_input], alignment=ft.MainAxisAlignment.CENTER),
             self.pseudo_input,
             ft.Container(height=20),
             join_btn
@@ -137,13 +141,33 @@ class GameClientApp:
         self.main_container.controls = [content]
         self.main_container.update()
 
-    def do_login(self, e):
+    def do_connect_and_login(self, e):
+        ip = self.ip_input.value
+        port_str = self.port_input.value
         pseudo = self.pseudo_input.value
-        if not pseudo:
-            self.show_error("Un pseudo est requis")
+        
+        if not ip or not port_str or not pseudo:
+            self.show_error("All fields are required")
             return
-        self.network.login(pseudo)
+            
+        try:
+            port = int(port_str)
+        except:
+            self.show_error("Invalid Port")
+            return
+
         self.current_pseudo = pseudo
+        
+        # Configure Network
+        self.network.host = ip
+        self.network.port = port
+        
+        # Connect
+        if self.network.connect():
+            # If successful, try login
+            self.network.login(pseudo)
+        else:
+            self.show_error("Unable to connect to server")
 
     def show_lobby(self):
         self.room_list_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
@@ -182,16 +206,24 @@ class GameClientApp:
 
     def show_game_room(self):
         # Header
+        # Header
         self.lbl_room_info = ft.Text(f"Room: {len(self.players_in_room)} Players", size=16)
-        leave_btn = ft.IconButton(ft.Icons.EXIT_TO_APP, on_click=self.do_leave_room)
+        is_full = len(self.players_in_room) >= 2
+        self.leave_btn = ft.IconButton(
+            ft.Icons.EXIT_TO_APP, 
+            on_click=self.do_leave_room,
+            disabled=is_full
+        )
+        if is_full:
+            self.show_info("Room full! Game starting.")
         
         # Game Board
         self.word_display = ft.Text("", size=40, weight="bold", color=ft.Colors.GREEN_400, text_align="center")
         self.status_display = ft.Text("Waiting...", size=14, color=ft.Colors.GREY)
         
         # Controls
-        self.input_letter = ft.TextField(label="Letter", width=100, max_length=1)
-        self.btn_play = ft.ElevatedButton("Play", on_click=self.do_play_letter)
+        self.input_letter = ft.TextField(label="Letter", width=100, max_length=1, disabled=True)
+        self.btn_play = ft.ElevatedButton("Play", on_click=self.do_play_letter, disabled=True)
         self.game_container = ft.Column([
             ft.Container(height=20),
             ft.Text("Current Fragment:", size=12),
@@ -208,7 +240,7 @@ class GameClientApp:
         self.chat_input = ft.TextField(hint_text="Chat...", expand=True, on_submit=self.do_send_chat)
         
         self.main_container.controls = [
-            ft.Row([self.lbl_room_info, leave_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Row([self.lbl_room_info, self.leave_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Divider(),
             self.game_container,
             ft.Divider(),
@@ -266,6 +298,14 @@ class GameClientApp:
             
             self.status_display.value = status
             self.word_display.update()
+            
+            # BLOCK/UNBLOCK INPUT based on turn
+            is_my_turn = (active == self.current_pseudo)
+            self.input_letter.disabled = not is_my_turn
+            self.btn_play.disabled = not is_my_turn
+            self.input_letter.update()
+            self.btn_play.update()
+            
             self.status_display.update()
             
         elif dtype == "CHAT":
@@ -277,6 +317,13 @@ class GameClientApp:
             msg = data.get("message", "")
             full_msg = f"Admin a envoyé un message : {msg}"
             self.show_broadcast_modal(full_msg)
+            
+        elif dtype == "GAME_OVER":
+            reason = data.get("reason", "Game Over")
+            self.show_info(f"Game Over: {reason}")
+            # Redirect to lobby after a short delay or immediately
+            # We can use a dialog or just switch
+            self.do_leave_room(None)
 
     def handle_notify(self, ntype, pseudo):
         # 0=JOIN, 1=LEAVE
@@ -290,6 +337,13 @@ class GameClientApp:
         if self.lbl_room_info:
             self.lbl_room_info.value = f"Room: {len(self.players_in_room)} Players"
             self.lbl_room_info.update()
+        
+        if hasattr(self, 'leave_btn') and self.leave_btn:
+            is_full = len(self.players_in_room) >= 2
+            self.leave_btn.disabled = is_full
+            self.leave_btn.update()
+            if is_full:
+                 self.show_info("Room full! Game starting.")
 
     def add_log(self, text):
         if self.chat_list:

@@ -9,7 +9,7 @@ class Room:
         self.name = name
         self.clients = [] # List of ClientHandler
         self.game_state = GameState()
-        self.max_players = 5
+        self.max_players = 2
 
     def add_client(self, client):
         if len(self.clients) >= self.max_players:
